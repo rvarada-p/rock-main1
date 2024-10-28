@@ -1,31 +1,27 @@
 # Unique name for this workflow
-name: Security Code Scanning Validation 
+name: Validate PR on integration branch
 on:
-  pull_request:
-  
+    pull_request:
+      # This workflow will run when a pull request is opened, or when a commit is pushed
+      # to a branch that has an existing pull request
+      types: [opened, synchronize]
+      # We only care about changes to the force-app directory. This prevents the job from running
+      # when changing non-salesforce files (like this yml file).
+# Jobs to be executed
 jobs:
-  Job1:
-    name: Snyk Scan
-    runs-on: ubuntu-latest
-    if: github.event.pull_request.base.ref == 'BRInt'   # check the target branch if it's BRInt branch
-    steps:
+    validate-deployment-on-integration-org:
+        runs-on: ubuntu-latest
+        if: ${{ github.actor != 'dependabot[bot]' }}
+        steps:
             # Install nodejs
-            - uses: actions/setup-node@v4
+            - uses: actions/setup-node@v2
               with:
-                node-version: '20'
+                node-version: '14'
             # Checkout the source code
             - name: 'Checkout source code'
               uses: actions/checkout@v2
               with:
                 fetch-depth: 0
-            # Install NPM
-            - name: Install NPM
-              run: "npm install -g latest"
-
-            # Install SNYK 
-            - name: Install SNYK
-              run: npm install snyk -g
-
             # Install Salesforce CLI
             - name: 'Install Salesforce CLI'
               run: |
@@ -33,35 +29,32 @@ jobs:
                   mkdir ~/sfdx
                   tar xJf sfdx-linux-x64.tar.xz -C ~/sfdx --strip-components 1
                   echo "$HOME/sfdx/bin" >> $GITHUB_PATH
-                  ~/sfdx/bin/sf version
-                  
+                  ~/sfdx/bin/sfdx version
             # install SFDX-Git-Delta plugin - https://github.com/scolladon/sfdx-git-delta
             - name: 'Installing sfdx git delta'
               run: | 
-                  echo y | sf plugins install sfdx-git-delta
-                  sf plugins 
-
-
+                  echo y | sfdx plugins:install sfdx-git-delta
+                  sfdx plugins 
+            # Install javasss
+            - name: 'Installing java'
+              run: sudo apt-get install openjdk-8-jdk
+            # Install SFDX scanner
+            - name: 'Installing SFDX scanner'
+              run: sfdx plugins:install @salesforce/sfdx-scanner
             # We use SFDX Git Delta to create a directory with only the metadata that has changed, this allows us
             # to deploy only those changes, as opposed to deploying the entire branch. This helps reducing deployment times
             - name: 'Create delta packages for new, modified or deleted metadata'
               run: | 
                   mkdir changed-sources
-                  sf sgd source delta -t "HEAD" -f "HEAD^" --output changed-sources/ --generate-delta
-            
-            # Run SNYK Scanner on the delta files
-            - name: 'Source Code Scanner'
-              env:
-                SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-              continue-on-error: true
+                  sfdx sgd:source:delta --to "HEAD" --from "HEAD^" --output changed-sources/ --generate-delta  
+            # Scan the code in the delta directory by using sfdx scanner. Output the results of the scan in a new file
+            # called apexScanResults.sarif
+            - name: 'Scan code'
               run: |
                   cd changed-sources
-                  snyk auth $SNYK_TOKEN
-                  snyk code test --all-projects --org=cargurusgithub.com --sarif-file-output=snykcode.sarif   
-            
-            # store the scanning results to sharif file
-            - name: Archive code coverage results
-              uses: actions/upload-artifact@v4
+                  sfdx scanner:run --format sarif --target './**/' --outfile 'results.html'  
+                  cd ..
+            - name: Upload SARIF file
+              uses: github/codeql-action/upload-sarif@v2
               with:
-               name: code-coverage-report
-               path: /snykcode.sarif
+                sarif_file: changed-sources/results.html
