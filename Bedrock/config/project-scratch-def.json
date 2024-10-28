@@ -1,0 +1,21 @@
+{
+  "orgName": "CarGurus",
+  "edition": "Developer",
+  "features": [],
+  "settings": {
+    "orgPreferenceSettings": {
+      "s1DesktopEnabled": true
+    },
+    "lightningExperienceSettings": {
+        "enableS1DesktopEnabled": true
+    },
+    "securitySettings": {
+        "passwordPolicies": {
+            "enableSetPasswordInApi": true
+        }
+    },
+    "mobileSettings": {
+        "enableS1EncryptedStoragePref2": false
+    }
+  }
+}

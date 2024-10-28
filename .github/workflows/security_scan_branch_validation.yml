@@ -1,0 +1,67 @@
+# Unique name for this workflow
+name: Security Code Scanning Validation 
+on:
+  pull_request:
+  
+jobs:
+  Job1:
+    name: Snyk Scan
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.base.ref == 'BRInt'   # check the target branch if it's BRInt branch
+    steps:
+            # Install nodejs
+            - uses: actions/setup-node@v4
+              with:
+                node-version: '20'
+            # Checkout the source code
+            - name: 'Checkout source code'
+              uses: actions/checkout@v2
+              with:
+                fetch-depth: 0
+            # Install NPM
+            - name: Install NPM
+              run: "npm install -g latest"
+
+            # Install SNYK 
+            - name: Install SNYK
+              run: npm install snyk -g
+
+            # Install Salesforce CLI
+            - name: 'Install Salesforce CLI'
+              run: |
+                  wget https://developer.salesforce.com/media/salesforce-cli/sfdx/channels/stable/sfdx-linux-x64.tar.xz
+                  mkdir ~/sfdx
+                  tar xJf sfdx-linux-x64.tar.xz -C ~/sfdx --strip-components 1
+                  echo "$HOME/sfdx/bin" >> $GITHUB_PATH
+                  ~/sfdx/bin/sf version
+                  
+            # install SFDX-Git-Delta plugin - https://github.com/scolladon/sfdx-git-delta
+            - name: 'Installing sfdx git delta'
+              run: | 
+                  echo y | sf plugins install sfdx-git-delta
+                  sf plugins 
+
+
+            # We use SFDX Git Delta to create a directory with only the metadata that has changed, this allows us
+            # to deploy only those changes, as opposed to deploying the entire branch. This helps reducing deployment times
+            - name: 'Create delta packages for new, modified or deleted metadata'
+              run: | 
+                  mkdir changed-sources
+                  sf sgd source delta -t "HEAD" -f "HEAD^" --output changed-sources/ --generate-delta
+            
+            # Run SNYK Scanner on the delta files
+            - name: 'Source Code Scanner'
+              env:
+                SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+              continue-on-error: true
+              run: |
+                  cd changed-sources
+                  snyk auth $SNYK_TOKEN
+                  snyk code test --all-projects --org=cargurusgithub.com --sarif-file-output=snykcode.sarif   
+            
+            # store the scanning results to sharif file
+            - name: Archive code coverage results
+              uses: actions/upload-artifact@v4
+              with:
+               name: code-coverage-report
+               path: /snykcode.sarif
